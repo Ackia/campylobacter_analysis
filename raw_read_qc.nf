@@ -21,7 +21,8 @@ reads_atropos_pe = Channel
 
     process trimming_pe {
     """
-    atropos
+    module load atropos
+    atropos trim 
     """
     }
 
