@@ -2,31 +2,30 @@
 
 params.input = "data/"
 params.output = 'data/trimmed'
-params.adapters = 'data/adapters.fasta'
-
-adapters = file(params.adapters)
-
-process modules {
-
-    """
-    #!/usr/bin/bash
-
-    print 'Hi there!' . '\n';
-    """
-
-}
 
 reads_atropos_pe = Channel
     .fromFilePairs(params.input + '*_{R1,R2}.fastq.gz', size: 2, flat: true)
 
-    process trimming_pe {
-    """
-    module load atropos
-    atropos trim 
-    """
-    }
+process trimming_pe {
+        publishDir params.output, mode: 'copy'
 
-    process fastqc {
+        input:
+            set val(id), file(read1), file(read2) from reads_atropos_pe
+            file adapters
+
+        output:
+            set val(id), file("${id}_R1.fastq"), file("${id}_R2.fastq") into trimmed_reads_pe
+
+        script:
+            """
+            mkdir trimmed
+            atropos -a TGGAATTCTCGGGTGCCAAGG -B AATGATACGGCGACCACCGAGATCTACACTCTTTCCCTACACGACGCTCTTCCGATCT \
+                -T 4 -m 50 --max-n 0 -q 20,20 -pe1 $read1 -pe2 $read2 \
+                -o ${id}_R1.fastq -p ${id}_R2.fastq
+            """
+}
+
+process fastqc {
         container 'hadrieng/fastqc'
 
         input:
@@ -39,10 +38,9 @@ reads_atropos_pe = Channel
             """
             fastqc -t 4 $reads
             """
-    }
+}
 
-    process multiqc {
-        container 'ewels/multiqc'
+process multiqc {
         publishDir 'results', mode: 'copy'
 
         input:
@@ -55,4 +53,4 @@ reads_atropos_pe = Channel
             """
             multiqc .
             """
-    }
+}
