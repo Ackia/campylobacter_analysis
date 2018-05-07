@@ -1,7 +1,7 @@
 #!/usr/bin/env nextflow
 
-params.input = "data/"
-params.output = 'data/trimmed'
+params.input = "data/1_Illumina_Combined_20180426/"
+params.output = 'data/2_trimmed'
 params.cpu = '24'
 
 reads_atropos_pe = Channel
