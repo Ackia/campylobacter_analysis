@@ -93,19 +93,3 @@ process results {
 
                                                 outputfile: "value"
 }
-/*process abacas {
-                                                  publishDir params.outdir, mode: 'copy'
-
-                                                  input:
-                                                  file'assembly' from megahit_results
-
-                                                  output:
-                                                  file("${id}_megahit/${id}.contigs.fa") into megahit_result
-
-                                                  script:
-                                                  """
-                                                  megahit  -t $params.cpus -o ${id}_megahit --out-prefix ${id} -1 $read1 -2 $read2
-                                                  """
-
-}
-*/
