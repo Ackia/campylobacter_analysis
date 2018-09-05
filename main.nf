@@ -7,7 +7,6 @@ params.outdir = ""
 params.cpus = "12"
 params.mem = "2"
 
-/* Commti to test GIT*/
 
 reads_atropos_pe = Channel
                       .fromFilePairs(params.reads + '*{1,2}.fastq.gz', size: 2, flat: true)
