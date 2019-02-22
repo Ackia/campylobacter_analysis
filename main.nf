@@ -1,96 +1,95 @@
 #!/usr/bin/env nextflow
+
 /*
- * pipeline input parameters
+===============================================================
+Ackia/Bact_MLST
+===============================================================
+ Bacterial assembly and MLST. Started February 2019.
+ #### Homepage / Documentation
+https://...
+ #### Authors
+Oskar Karlsson-Lindsjö <Oskar.E.Karlsson@slu.se>
+---------------------------------------------------------------
+*/
+
+
+// Configurable variables
+params.name = false
+params.project = false
+params.readsPath = false
+params.output = 'results'
+params.trim_qual = 20
+
+
+
+/*
+ * Creates the `read_pairs` channel that emits for each read-pair a tuple containing
+ * three elements: the pair ID, the first read-pair file and the second read-pair file
  */
-params.reads = ""
-params.outdir = ""
-params.cpus = "12"
-params.mem = "2"
+Channel
+    .fromFilePairs( params.readsPath + '*_{R1,R2}_.merged.fq.gz', size: 2, flat: true)
+    .ifEmpty { error "Cannot find any reads matching: ${params.readsPath}" }
+    .into { read_pairs_multiqc_raw ; read_pairs_fastp_raw }
 
+/*
+* Trimming quality and adapters with fastp
+*/
+process fastp {
+    publishDir "$params.output/qc", mode: 'copy'
+    input:
+        set val(id), file(read1), file(read2) from read_pairs_fastp_raw
 
-reads_atropos_pe = Channel
-                      .fromFilePairs(params.reads + '*{1,2}.fastq.gz', size: 2, flat: true)
-process trimming_pe {
-                          publishDir params.outdir, mode: 'copy'
+    output:
+        set val(id), file("${id}_R1_trimmed.fastq"), file("${id}_R2_trimmed.fastq") into trimmed
 
-                          input:
-                              set val(id), file(read1), file(read2) from reads_atropos_pe
-
-                          output:
-                              set val(id), file("${id}_R1_trimmed.fastq"), file("${id}_R2_trimmed.fastq") into trimmed_reads_pe
-
-                          script:
-                              """
-                              atropos -a TGGAATTCTCGGGTGCCAAGG -B AATGATACGGCGACCACCGAGATCTACACTCTTTCCCTACACGACGCTCTTCCGATCT \
-                                  -T $params.cpus -m 50 --max-n 0 -q 20,20 -pe1 $read1 -pe2 $read2 \
-                                  -o ${id}_R1_trimmed.fastq -p ${id}_R2_trimmed.fastq
-                              """
-                      }
-trimmed_reads_pe.into {reads_for_fastq; reads_for_megahit; reads_for_mlst}
+    script:
+        """
+        fastp -i $read1 -o ${id}_R1_trimmed.fastq -I $read2 -O ${id}_R2_trimmed.fastq \
+            --detect_adapter_for_pe --qualified_quality_phred $params.trim_qual \
+            --cut_by_quality5 --cut_by_quality3 --cut_mean_quality $params.trim_qual \
+            --html ${id}_fastp_report.html --length_required 35 
+        """
+}
+trimmed.into {trimmed_reads_pe ; trimmed_pe_spades}
 
 process fastqc {
-                                                publishDir params.outdir, mode: 'copy'
+    input:
+        set val(id), file(read1), file(read2) from read_pairs_multiqc_raw
+        set val(id), file(trimmed_read1), file(trimmed_read2) from trimmed_reads_pe
 
-                                                input:
-                                                    file reads from reads_for_fastq.collect()
+    output:
+        file "*_fastqc.{zip,html}" into fastqc_results
 
-                                                output:
-                                                    file "*_fastqc.{zip,html}" into fastqc_results
-
-                                                script:
-                                                    """
-                                                    fastqc $reads
-                                                    """
-                                            }
+    script:
+        """
+        fastqc -t 4 $read1 $read2 $trimmed_read1 $trimmed_read2
+        """
+}
 
 process multiqc {
-                                                publishDir params.outdir, mode: 'copy'
+    publishDir "$params.output/qc", mode: 'copy'
+    input:
+        file 'fastqc/*' from fastqc_results.collect()
 
-                                                input:
-                                                    file 'fastqc/*' from fastqc_results.collect()
+    output:
+        file 'multiqc_report.html'
 
-                                                output:
-                                                    file 'multiqc_report.html'
+    script:
+        """
+        multiqc .
+        """
+}
 
-                                                script:
-                                                    """
-                                                    multiqc .
-                                                    """
-                      }
-process megahit {
-                                                  publishDir params.outdir, mode: 'copy'
+process spades {
+    publishDir params.output, mode: 'copy'
+    input:
+        set val(id), file(trimmed_read1), file(trimmed_read2) from trimmed_pe_spades
 
-                                                  input:
-                                                      set val(id), file(read1), file(read2) from reads_for_megahit
+    output:
+        file("${id}_spades/contigs.fasta") into spades_result
 
-                                                  output:
-                                                      file("${id}_megahit/${id}.contigs.fa") into megahit_result
-
-                                                  script:
-                                                      """
-                                                      megahit  -t $params.cpus -o ${id}_megahit --out-prefix ${id} -1 $read1 -2 $read2
-                                                      """
-                      }
-/*process mlst {
-                                                publishDir params.outdir, mode: 'copy'
-
-                                                input:
-                                                    file 'assembly' from megahit_result
-                                                    set val(id), file(read1), file(read2) from reads_for_mlst
-
-                                                output:
-                                                    file ("${id}_mlst_report.tsv") into mlst_result
-
-                                                script:
-                                                    """
-                                                    mlst
-                                                    """
-                      }
-process results {
-                                                publishDir params.outdir, mode: 'copy'
-
-                                                input:
-                                                file 'mlst_result' from mlst_result
-
-                                                outputfile: "value"
+    script:
+    """
+    spades.py -1 $trimmed_read1 -2 $trimmed_read2 -o ${id}_spades --only-assembler --careful 
+    """
 }
